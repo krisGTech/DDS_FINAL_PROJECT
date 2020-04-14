@@ -1,0 +1,982 @@
+---
+title: "MSDS 6306: Doing Data Science"
+author: "Kris Ghimire"
+date: "3/24/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+
+## DDSAnalytics Talent Management Solution:
+
+# Introduction: 
+Keeping employees happy in the company and hiring best match for the specific role is one of the most important aspect of Talent management. People are the backbone of any company. All the resources, infrastructures, and technology provide no value to the company without the topmost talented and skilled employees. Hence, the biggest challenges that talent management company faces every day is not being able to have enough data on attracting and  retaining the talented  employees. Therefore, our goal in this project is to leverage the power of data science to conduct an analysis on existing employee data to provide some interesting trends that may exists in data set, identify top factors that contribute to turnover and build a model to classify attrition and predict monthly income. 
+
+
+
+```{r}
+
+# Question to Address in Analysis: 
+# Q.1 Identify factors that lead to attrition backed up by evidence provided by analysis. 
+
+#Q. 2. Find some specific trends that may exist in the data set (e.g., “Data Scientists have the highest job satisfaction”). 
+
+#Q.3.  Also provide any other interesting trends and observations from your analysis.
+```
+
+```{r}
+#libraries 
+library(dplyr)
+library(class)
+library(caret)
+library(modelr)
+library(vctrs)
+library(qwraps2)
+library(tidyverse) 
+library(DataExplorer) # shows missing values by bar and percentage.
+library(openintro) 
+library(gdata)
+library(mapdata)
+library(mime)
+library(treemap) 
+library(VIM)
+library(inspectdf) 
+library(GGally) 
+library(ggthemes)
+library(gridExtra)
+library(class)
+library(broom)
+library(caret)
+library(MASS)
+library(car)
+library(cowplot)
+library(corrplot) 
+library(e1071)
+library(data.table)
+library(dplyr)
+library(stats)
+library(InformationValue)
+library(psych)
+
+DDSAnalytics <- read.csv("https://raw.githubusercontent.com/krisGTech/DDS_FINAL_PROJECT/master/Data/CaseStudy2-data.csv",sep = ",",header = TRUE)
+
+head(DDSAnalytics)
+summary(DDSAnalytics)
+colnames(DDSAnalytics)
+dim(DDSAnalytics)
+str(DDSAnalytics)
+```
+
+
+# EDA Section 
+
+```{r}
+DDSAnalytics%>%ggplot(aes(x=YearsAtCompany, y=MonthlyIncome,color=JobRole))+
+  geom_point()+ggtitle("Year at Company vs. Monthly Income")
+
+# Bar plot of employees by thier Job role.
+summary(DDSAnalytics$JobRole)
+jobRoleTable <- table(DDSAnalytics$JobRole)
+jobRoleTableDf <- data.frame(jobRoleTable)
+names(jobRoleTableDf) <- c("JobRole","TotalCount")
+#What we would like is for R to respect the order in data.frame. For that to happen, we need to change the order of factor levels by specifying the order explicitly.
+jobRoleTableDf$JobRole <- factor(jobRoleTableDf$JobRole,levels = jobRoleTableDf$JobRole[order(jobRoleTableDf$TotalCount)])
+
+# library(dplyr)
+# jobRoleTableDf%>%ggplot(aes(x=JobRole,y=TotalCount,fill=Jobsatisfaction))+geom_bar(stat = "identity")+coord_flip()+ggtitle("Number of Employe by Job Role")+
+#   xlab("Job Role")+ylab("Total number of Employees")+theme(
+#     plot.title = element_text(color = "black",
+#                               hjust = 0.5,
+#                               size = 15),
+#     legend.position = "none"
+#   )
+
+DDSAnalytics%>%ggplot(aes(x=Department,fill=Department))+geom_bar()
+DDSAnalytics%>%ggplot(aes(x=Education,fill=EducationField))+geom_bar()
+DDSAnalytics%>%ggplot(aes(x=JobSatisfaction,fill=EducationField))+geom_bar()
+
+# Job satisfaction is higher for Life Science field. 
+# Job Satisfaction higher for employees with the job title Sales executive. 
+# there are very few employee in Job satisfaction level 4 with job title Human Resource. 
+```
+
+```{r}
+DDSAnalytics%>%ggplot(aes(x=YearsAtCompany,y=JobSatisfaction,fill=JobRole))+
+  geom_bar(stat = "identity")
+
+#jobSatisfaction
+plyr::count(DDSAnalytics,'JobSatisfaction')->jobSatisfactionFreq
+
+data.frame(jobSatisfactionFreq)
+jobSatisfactionFreq%>%ggplot(aes(x=JobSatisfaction,y=freq))+
+  geom_bar(stat = "identity")
+# Over all the employee are satisfied with their job. 
+
+hist(DDSAnalytics$MonthlyIncome)
+hist(DDSAnalytics$MonthlyRate)
+hist(DDSAnalytics$YearsAtCompany)
+hist(DDSAnalytics$YearsInCurrentRole)
+hist(DDSAnalytics$TotalWorkingYears)
+hist(DDSAnalytics$DistanceFromHome)
+DDSAnalytics%>%ggplot(aes(x=JobSatisfaction,y=YearsAtCompany,color=JobRole))+geom_point()
+
+```
+
+
+```{r}
+str(DDSAnalytics$Age)
+DDSAnalytics$Age
+summary(DDSAnalytics$Age)
+hist(DDSAnalytics$Age)
+```
+
+
+
+```{r}
+#employee training programs, identifying high-potential employees and reducing/preventing voluntary employee turnover (attrition). 
+as.factor(DDSAnalytics$TrainingTimesLastYear)->traingTimeFactor
+as.factor(DDSAnalytics$JobInvolvement)->jobInvFactor
+
+dfTrainTimJobInv <- data.frame(JobInv=DDSAnalytics$JobInvolvement,
+                               Training=traingTimeFactor,
+                               EmployeeJobSatisfaction=DDSAnalytics$JobSatisfaction,
+                               jobInvFac= jobInvFactor)
+#dfTrainTimJobInv%>%ggplot(aes(x=JobInv))+geom_bar(aes(fill=Training))
+library(GGally)
+dfTrainTimJobInv%>%dplyr::select(JobInv,Training,EmployeeJobSatisfaction)%>%
+  ggpairs(aes(color=Training))
+dfTrainTimJobInv%>%ggplot(aes(Training))+geom_bar(aes(fill=jobInvFac)) ->df1
+
+```
+
+#EDA, Correlation and Variable Selection 
+
+```{r}
+#Correlation 
+DDSAnalytics%>%dplyr::select(Age, DailyRate,DistanceFromHome,
+                      Education, EnvironmentSatisfaction,
+                      HourlyRate,JobInvolvement,JobLevel,
+                      JobSatisfaction, MonthlyIncome,MonthlyRate, 
+                      NumCompaniesWorked,PerformanceRating,TotalWorkingYears,
+                      RelationshipSatisfaction,StockOptionLevel,TrainingTimesLastYear,
+                      WorkLifeBalance,YearsInCurrentRole, YearsSinceLastPromotion,
+                      YearsAtCompany, YearsWithCurrManager,
+                      PercentSalaryHike,HourlyRate)->corVarSelection
+#cor(k,method = "pearson")
+#corrplot(DDSAnalytics, method = "number")
+#k2 <- rcorr(as.matrix(k))
+library(corrplot)
+cor_selected_Var <-cor(corVarSelection)
+head(round(cor_selected_Var,2))
+corrplot(cor_selected_Var,method = "circle")
+corrplot(cor_selected_Var,method = "number") # correlation check for all variables 
+# Displays diagnoal histogram 
+library(PerformanceAnalytics)
+chart.Correlation(cor_selected_Var,histogram = TRUE, pac=19)
+
+
+DDSAnalytics%>%ggplot(aes(x=Age,y=TotalWorkingYears,color=Gender))+geom_point()
+DDSAnalytics%>%ggplot(aes(x=JobLevel,y=MonthlyIncome,color=Department))+geom_point()
+DDSAnalytics%>%ggplot(aes(x=JobLevel,y=TotalWorkingYears))+geom_point()
+DDSAnalytics%>%ggplot(aes(x=TotalWorkingYears,y=MonthlyIncome,color=Gender))+geom_point()
+DDSAnalytics%>%ggplot(aes(x=YearsInCurrentRole,y=YearsWithCurrManager,color=Gender))+geom_point()
+DDSAnalytics%>%ggplot(aes(x=YearsSinceLastPromotion,y=YearsAtCompany,color=Gender))+geom_point()
+
+DDSAnalytics%>%dplyr::select(Age,MonthlyIncome,TotalWorkingYears,PercentSalaryHike,YearsWithCurrManager,
+                      YearsInCurrentRole,YearsSinceLastPromotion,MonthlyRate,NumCompaniesWorked,
+                      RelationshipSatisfaction,StockOptionLevel,TrainingTimesLastYear,
+                      WorkLifeBalance,YearsAtCompany)->selected_var 
+
+
+
+selected_var_correlation <- cor(selected_var)
+
+head(round(selected_var_correlation,2))
+
+corrplot(selected_var_correlation,method = "circle")
+corrplot(selected_var_correlation,method = "number")
+
+# selected variables with no correlation 
+DDSAnalytics%>%dplyr::select(Age,PercentSalaryHike,MonthlyRate,NumCompaniesWorked,
+                      RelationshipSatisfaction,StockOptionLevel,TrainingTimesLastYear,
+                      WorkLifeBalance,YearsAtCompany,DistanceFromHome,
+                      Education,JobInvolvement,HourlyRate)->selected_var_correlation1
+
+# selected_var_correlation1$MonthlyIncome_log = log(selected_var_correlation1$MonthlyIncome)
+# selected_var_correlation1$MonthlyRate_log = log(selected_var_correlation1$MonthlyRate) # log made it left swequed. 
+
+
+selected_var_correlation1_cor <- cor(selected_var_correlation1)
+head(round(selected_var_correlation1_cor,2))
+corrplot(selected_var_correlation1_cor,method = "number")
+
+chart.Correlation(selected_var_correlation1_cor,histogram = TRUE, pac=19)
+library(ggpubr)
+
+
+```
+
+
+#Variable Selection and Model Fitting
+
+```{r}
+library(MASS)
+
+
+#DDSAnalytics <- read.csv(file.choose())
+# Fit the model 
+fitMod <- lm(MonthlyIncome~Age+DailyRate+PercentSalaryHike+MonthlyRate+NumCompaniesWorked+
+                      RelationshipSatisfaction+StockOptionLevel+TrainingTimesLastYear+
+                      WorkLifeBalance+YearsAtCompany+DistanceFromHome+
+                      Education+JobInvolvement+HourlyRate,data = DDSAnalytics)
+ # Stepwise variable selection 
+#Variables selected are:  Age MonthlyRate NumCompaniesWorked YearsAtCompany
+modStepw <- stepAIC(fitMod,direction = "both")
+modStepw$anova
+
+# histogram and qqplot of residuals 
+hist(modStepw$residuals,col="orange",main = "Residual Histogram")
+ggqqplot(modStepw$residuals,color = "orange",title = "Residual Normality Check") # qqplot 
+plot(modStepw$residuals,col="orange",main = "Residual Plots")
+```
+
+#Cross Validation 
+
+```{r}
+# Spliting dataset into Training and Test and Cross Validation 
+set.seed(5)
+ddsObs = sample(seq(1,dim(DDSAnalytics)[1]),round(.75*dim(DDSAnalytics)[1]),replace = FALSE)
+ddsTrain = DDSAnalytics[ddsObs,]
+ddsTrain
+ddsTest = DDSAnalytics[-ddsObs,]
+
+DDSAnalytics$YearsAtCompany_log = log(DDSAnalytics$YearsAtCompany)
+DDSAnalytics$MonthlyRate_log = log(DDSAnalytics$MonthlyRate)
+DDSAnalytics$NumCompaniesWorked_log = log(DDSAnalytics$NumCompaniesWorked) # many -inf no use 
+
+# fitting or training our model on Training Set 
+ddsModel <- lm(MonthlyIncome ~ Age + NumCompaniesWorked + JobSatisfaction+JobLevel+
+    YearsAtCompany +TotalWorkingYears, data = ddsTrain) # train data model 
+
+summary(ddsModel)
+dfres <- data.frame(ddsModel$residuals)
+dfres%>%ggplot(aes(ddsModel.residuals,fill="#DC143C"))+geom_histogram(color="white")+ggtitle("Residual Histogram")+xlab("Residuals")+
+  theme(panel.background = element_blank(),
+        legend.position =  "none",
+        plot.title = element_text(hjust = 0.5))
+#hist(ddsModel$residuals,col="#1E90FF",main = "Residual Histogram")
+plot(ddsModel$residuals,col="#F8766D",main = "Residual Plots")
+library(ggpubr)
+ggqqplot(ddsModel$residuals)
+
+# #1E90FF", "#DC143C
+# Testing our model built using train set with the test data set 
+ddsTest$MonthlyIncomePred = predict(ddsModel, newdata = ddsTest)
+
+# MS_PE = data.frame(Observed = ddsTest$MonthlyIncome, Predicted = ddsTest$MonthlyIncomePred)
+# # calculating MSPE to see how good our model is.
+# MS_PE$Residual = MS_PE$Observed - MS_PE$Predicted
+# MS_PE$SquaredResidual = MS_PE$Residual^2
+# 
+# mean(MS_PE$SquaredResidual)
+# RMSE(MS_PE$Observed,MS_PE$Predicted)
+
+```
+
+# Monthly Income Predicton 
+
+```{r}
+# I have also provided an additional data set of 300 observations that do not have the Monthly Incomes.  This data is in the file “CaseStudy2CompSet No Salary.csv”. 
+
+# Importing No Salary data to predict the salary 
+DDSAnalyticsNoSalary <- read.csv("https://raw.githubusercontent.com/krisGTech/DDS_FINAL_PROJECT/master/Data/CaseStudy2CompSet%20No%20Salary.csv",sep = ",",header = TRUE)
+
+# Use model to predict the unkown Montly Income from dataset. 
+ddsNoSalPreds = predict(ddsModel,newdata = DDSAnalyticsNoSalary)
+as.data.frame(ddsNoSalPreds)->ddsAnalyticSalPreds 
+names(ddsAnalyticSalPreds) <- c("Predicted Salary")
+head(ddsAnalyticSalPreds)
+DDSAnalyticsNoSalary$PredictedMonthlyIncome = ddsNoSalPreds #add PredictedSalary col and put the predicted values into tht column.
+library(dplyr)
+DDSAnalyticsNoSalary%>%dplyr::select(ID,PredictedMonthlyIncome)->PredictionWithID
+head(PredictionWithID) # dataframe with ID and PredictedMonthlyIncome. 
+write.csv(PredictionWithID,"DDSIncomePrediction.csv") # write csv file to Excel
+```
+
+
+
+
+Turnover Analysis
+
+```{r}
+#Turnover Analysis
+#https://corpgov.law.harvard.edu/2018/01/22/the-option-to-quit-the-effect-of-employee-stock-options-on-turnover/
+library(plyr)
+library(dplyr)
+library(tidyverse)
+
+# Donut chart Attrition Percentage 
+Att <- DDSAnalytics%>%group_by(Attrition)%>%
+  dplyr::summarize(count=n(),
+                   percentage = n()/nrow(DDSAnalytics))
+Att
+Attdonut <- ggplot(data = Att,aes(x=2,y=percentage,fill=Attrition))+
+  geom_col(color="white")+
+  coord_polar("y", start = 1)+
+  geom_text(aes(label=paste0(round(percentage*100),"%")),
+            position = position_stack(vjust = 0.5))+
+  theme(panel.background = element_blank(),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        plot.title = element_text(hjust = 0.5,size = I(17)))+
+  ggtitle("Attrition Percentage")+
+  xlim(0.5,2.5)
+Attdonut
+
+# Donut chart Marital Sttus percentage 
+ddsMaritalStat <- DDSAnalytics%>%group_by(MaritalStatus)%>%
+  dplyr::summarize(count=n(),
+                   Mpercentage=n()/nrow(DDSAnalytics))
+ddsMaritalStatDonut <- ggplot(data = ddsMaritalStat,aes(x=2,y=Mpercentage,fill=MaritalStatus))+
+  geom_col(color="white")+
+  coord_polar("y",start=1)+
+  geom_text(aes(label=paste0(round(Mpercentage*100),"%")),
+            position = position_stack(vjust = 0.5),color="white",size=I(4.5))+
+  theme(panel.background = element_blank(),
+        axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        plot.title = element_text(hjust = 0.5,size = I(17)))+
+  ggtitle("Marital Status Percentage")+
+  xlim(0.3,2.5)
+ddsMaritalStatDonut
+
+DDSAnalytics$StockOptionLevel = as.factor(DDSAnalytics$StockOptionLevel)
+DDSAnalytics$JobInvolvement = as.factor(DDSAnalytics$JobInvolvement)
+#JobInvolvement Donut chart percentage 
+ddsJobInv <- DDSAnalytics%>%group_by(JobInvolvement)%>%
+  dplyr::summarize(count=n(),
+                   InvPercentage = n()/nrow(DDSAnalytics))
+
+ddsJobInvDonut <- ggplot(data = ddsJobInv, aes(x=2,y=InvPercentage,fill=JobInvolvement))+
+  geom_col(color="white")+
+  coord_polar("y",start = 1)+
+  geom_text(aes(label=paste0(round(InvPercentage*100),"%")),
+                  position=position_stack(vjust = 0.5),size=I(5.5))+
+  theme(panel.background = element_blank(),
+        axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        legend.text = element_text(size=I(13)),
+        plot.title = element_text(hjust = 0.5,size = I(17)))+
+  ggtitle("Job Involvement Percentage")+
+  xlim(0.5,2.5)
+
+ddsJobInvDonut   
+
+# Attrition based on Job Involvement bar chart 
+DDSAnalytics%>%ggplot(aes(x=JobInvolvement,fill=Attrition))+geom_bar()+
+  ggtitle("Involvement Keeps Employees In The Company")+
+  xlab("Job Involvement")+ylab("Employee Count")+
+  theme(panel.background = element_blank(),
+        plot.title = element_text(hjust = 0.5,size=I(18)),
+        axis.text = element_text(size = I(12)),
+        axis.title = element_text(size=I(15)))
+
+#panel.background = element_rect(fill = "lightblue",
+                               # colour = "lightblue",
+
+# Stock Option Level pie chart 
+ddsStockOpt <- DDSAnalytics%>%group_by(StockOptionLevel)%>%
+  dplyr::summarize(count=n(),
+                   StockPercentage = n()/nrow(DDSAnalytics))
+ddsStockPie <- ggplot(data=ddsStockOpt,aes(x=2,y=StockPercentage,fill=StockOptionLevel))+
+  geom_col(color="white")+
+  coord_polar("y",start = 1)+
+  geom_text(aes(label=paste0(round(StockPercentage*100),"%")),
+            position = position_stack(vjust = 0.5))+
+  theme(panel.background = element_blank(),
+        axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        plot.title = element_text(hjust = 0.5,size = I(19)))+
+  ggtitle("Percent Of Employees Owning Stock Option")
+  
+ddsStockPie
+
+
+# Bar Chart Marital Status and Attrition Relationship
+DDSAnalytics%>%ggplot(aes(MaritalStatus))+geom_bar(aes(fill=Attrition))+
+  ggtitle("Higher Attrition Among Sinlge Employee")+xlab("Marital Status")+
+  theme(plot.title = element_text(hjust = 0.5,size = I(17)))->AttvsMart
+AttvsMart
+
+figure <- ggarrange(Attdonut,ddsMaritalStatDonut,AttvsMart,
+                    labels = c("A", "B","C"),
+                    ncol = 3, nrow = 1)
+figure
+
+# Donut chart Relationship StockOptionLevel Attrition 'Yes'
+DDSAnalytics%>%filter(Attrition=="Yes")->AttYes
+AttYes%>%ggplot(aes(Attrition))+geom_bar(aes(fill=StockOptionLevel))+
+  ggtitle("Employe Attrition Based On Stock Option ")+
+  theme(plot.title = element_text(hjust = 0.5,size = I(20)),
+        axis.text = element_text(size=I(17)),
+        axis.title = element_text(size=I(18)),
+        panel.background = element_blank(),
+        axis.title.y = element_blank()
+        )
+
+ DDSAnalytics%>%ggplot(aes(StockOptionLevel))+geom_bar(aes(fill=MaritalStatus))+
+    ggtitle("Not Enough Stock Option For Single Employee ")+
+  theme(plot.title = element_text(hjust = 0.5,size = I(20)),
+        axis.text = element_text(size=I(17)),
+        axis.title = element_text(size=I(18)),
+        panel.background = element_blank(),
+        axis.title.y = element_blank()
+        )
+
+ library(dplyr)
+ DDSAnalytics%>%ggplot(aes(JobInvolvement, fill= Attrition))+
+  geom_bar() +
+   ggtitle("Age Group Attrition ")+
+  theme(plot.title = element_text(hjust = 0.5,size = I(20)),
+        axis.text = element_text(size=I(17)),
+        axis.title = element_text(size=I(18)),
+        panel.background = element_blank()
+       
+        )
+ 
+ DDSAnalytics%>%ggplot(aes(x=JobRole,fill=Attrition))+
+   geom_bar()
+ 
+ 
+ 
+DDSAnalytics%>%ggplot(aes(y=MonthlyIncome,x=Attrition,fill=Attrition))+
+  geom_boxplot()+ggtitle("Lower Income Cause Of Attrition")+
+  xlab("Attrition")+ylab("Monthly Income")+
+  theme(panel.background =element_rect(fill = "white", colour = "grey50"),
+        plot.title = element_text(hjust = 0.5,size=I(18)),
+        axis.text = element_text(size=I(13)),
+        axis.title = element_text(size=I(15)))
+
+#Lower Monthlty Cause Of Attrition
+
+ DDSAnalytics%>%ggplot(aes(y=MonthlyRate,x=Attrition,fill=Attrition))+
+   geom_boxplot()+ggtitle("Lower Monthlty Rate Cause Of Attrition")+
+  xlab("Attrition")+ylab("Monthly Rate")+
+  theme(panel.background =element_rect(fill = "white", colour = "grey50"),
+        plot.title = element_text(hjust = 0.5,size=I(18)),
+        axis.text = element_text(size=I(13)),
+        axis.title = element_text(size=I(15)),
+        legend.position = "none")
+# Monthly Income Attrition Jobrole boxplot  
+DDSAnalytics%>%ggplot(aes(y=MonthlyIncome,x=Attrition,fill=JobRole))+geom_boxplot()+
+  ggtitle("Job Role Income Analysis")+
+  xlab("Attrition")+ylab("Monthly Income")+
+  theme(panel.grid.major = element_line(color="grey70",size=0.2),
+        panel.background = element_rect(fill = "white", colour = "grey50"),
+        plot.title = element_text(hjust = 0.5,size=I(18)),
+        axis.text = element_text(size=I(13)),
+        axis.title = element_text(size=I(15))
+        )
+ 
+#MonthlyIncome,Attrition,JobRole ggpairs 
+DDSAnalytics%>%dplyr::select(MonthlyIncome,Attrition,JobRole)%>%
+  ggpairs(aes(color=JobRole))+
+  ggtitle("Job Role Income Analysis Based On Attrition")+
+  xlab("Attrition")+ylab("Monthly Income")+
+  theme(panel.grid.major = element_line(color="grey70",size=0.2),
+        panel.background = element_rect(fill = "white", colour = "grey50"),
+        plot.title = element_text(hjust = 0.5,size=I(24)),
+        axis.text = element_text(size=I(13)),
+        axis.title = element_text(size=I(15))
+        )
+
+# Subseting data set based on Attrtion YES and NO
+DDSAnalytics%>%ggplot(aes(OverTime))+geom_bar(aes(fill=Attrition))
+DDSAnalytics%>%ggplot(aes(x=YearsAtCompany,y=YearsSinceLastPromotion))+geom_point(aes(color=Attrition))
+DDSAnalytics%>%ggplot(aes(Gender))+geom_bar(aes(fill=Attrition))
+DDSAnalytics%>%filter(Attrition=="Yes")->AttYes
+DDSAnalytics%>%filter(Attrition=="No")->AttNo
+
+library(dplyr)
+
+#Job Involvement Rating Percentage Attrition YES
+AttYes$JobInvolvement = as.factor(AttYes$JobInvolvement)
+AttYesJobInvCt <- AttYes%>%group_by(JobInvolvement)%>%
+  dplyr::summarize(count=n(),
+                   JobInvPercent = n()/nrow(AttYes))
+
+jobInvYesAtt <- ggplot(data = AttYesJobInvCt,aes(x=2,y=JobInvPercent,fill=JobInvolvement))+
+  geom_col(color="white")+
+  coord_polar("y",start = 1)+
+  geom_text(aes(label=paste0(round(JobInvPercent*100),"%")),
+            position = position_stack(vjust = 0.5),size=I(5.5))+
+  theme(panel.background = element_blank(),
+        axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        legend.position = "none",
+        legend.text = element_text(size=I(13)),
+        plot.title = element_text(hjust = 0.5,size = I(17)))+
+  ggtitle("Job Involvement Rating Percentage Attrition \nYes")+
+  xlim(0.5,2.5)
+jobInvYesAtt 
+
+#Job Involvement Rating Percentage Attrition NO
+AttNo$JobInvolvement = as.factor(AttNo$JobInvolvement)
+AttNoJobInvCt <- AttNo%>%group_by(JobInvolvement)%>%
+  dplyr::summarize(count=n(),
+                   JobInvPercentAttNo = n()/nrow(AttNo))
+
+jobInvNoAttDonut <- ggplot(data = AttNoJobInvCt,aes(x=2,y=JobInvPercentAttNo,fill=JobInvolvement))+
+  geom_col(color="white")+
+  coord_polar("y",start = 1)+
+  geom_text(aes(label=paste0(round(JobInvPercentAttNo*100),"%")),
+            position = position_stack(vjust = 0.5),size=I(4.5))+
+  theme(panel.background = element_blank(),
+        axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        legend.position = "none",
+        legend.text = element_text(size=I(13)),
+        plot.title = element_text(hjust = 0.5,size = I(17)))+
+  ggtitle("Job Involvement Rating Percentage Attrition \nNo")+
+  xlim(0.5,2.5)
+jobInvNoAttDonut 
+
+
+# Attrition Yes Over Time Analysis 
+AttYesOvrtm <- AttYes%>%group_by(OverTime)%>%
+  dplyr::summarize(count=n(),
+                   OverTmPercent = n()/nrow(AttYes))
+attOverTime <- ggplot(data = AttYesOvrtm,aes(x=3,y=OverTmPercent,fill=OverTime))+
+  geom_col(color="white")+
+  scale_fill_manual(values=c("#1E90FF", "#DC143C"))+
+  coord_polar("y",start=1)+
+  geom_text(aes(label=paste0(round(OverTmPercent*100),"%")),
+            position = position_stack(vjust = 0.5),size=I(6),color="white")+
+  theme(panel.background = element_blank(),
+        axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        legend.text = element_text(size = I(13)),
+        plot.title = element_text(hjust = 0.5,size=I(19))
+        )+
+  ggtitle("Over Time And Attrition \n YES")+
+  xlim(0.1,3.5)
+attOverTime 
+
+# N0 Attrition vs Over Time
+AttNoOvtm <- AttNo%>%group_by(OverTime)%>%
+  dplyr::summarize(count=n(),
+                   OverTmPercentNatt = n()/nrow(AttNo))
+attOverTimeNatt <- ggplot(data = AttNoOvtm,aes(x=3,y=OverTmPercentNatt,fill=OverTime))+
+  geom_col(color="white")+
+  scale_fill_manual(values = c("#1E90FF", "#DC143C"))+
+  coord_polar("y",start = 1)+
+  geom_text(aes(label=paste0(round(OverTmPercentNatt*100),"%")),
+            position = position_stack(vjust = 0.5),size=I(6),color="white")+
+  theme(panel.background = element_blank(),
+        axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        legend.text = element_text(size=I(13)),
+        plot.title = element_text(hjust = 0.5,size = I(19)))+
+  ggtitle("Over Time And Attrition \n NO")+
+  xlim(0.1,3.5)
+      
+attOverTimeNatt
+
+```
+
+
+
+```{r}
+#Q. 4. The business is also interested in learning about any job role specific trends that may exist in the data set (e.g., “Data Scientists have the highest job satisfaction”). 
+as.factor(DDSAnalytics$JobSatisfaction)->jobsatFac 
+str(jobsatFac)
+dfjobSat <- data.frame(jRol=DDSAnalytics$JobRole,Satisfaction=jobsatFac)
+# ordering bars in ascending order
+dfjobSat <- within(dfjobSat,
+                   jRol <- factor(jRol,levels = names(sort(table(jRol),decreasing = FALSE))))
+ggplot(dfjobSat,aes(x=jRol))+geom_bar(aes(fill=Satisfaction))+ggtitle("Job Role Vs Job Satisfaction")+
+  xlab("Job Role")+ylab("Number  of Employee ")+coord_flip()+theme(plot.title = element_text(
+    color="Black",
+    hjust = 0.5,
+    size = 18,
+    
+  ),axis.text.y = element_text(color="Black",
+                               size = 15),
+  axis.text.x = element_text(color="black",
+                             size=15),
+  axis.title.x = element_text(size = 17),
+  axis.title.y = element_text(size = 17),
+  panel.background = element_blank()
+ )-> df2
+df2
+
+```
+
+
+
+
+```{r}
+##Q.5. You can also provide any other interesting trends and observations from your analysis.
+DDSAnalytics%>%ggplot(aes(x=YearsAtCompany,y=Age,color=JobRole))+
+  geom_point(aes(size=I(2.3)))+ggtitle("Scatter Plot Of Job Role Based On Age And Years At The Company")+
+  labs(x="Years at the company",y="Employee Age")+theme(
+    plot.title = element_text(color = "#000000",
+                              size = 12,
+                              hjust = 0.5),
+    axis.text = element_text(color = "#000000",
+                             size = 14),
+    axis.title = element_text(color = "#000000",
+                              size=16),
+    legend.text = element_text(color = "#000000",
+                               size = 13),
+    panel.background = element_blank()
+  )
+```
+
+
+
+
+
+Attrition Classifcation Section 
+
+```{r}
+#DDSAnalyticsNoAttrition <-read.csv(file.choose())
+DDSAnalyticsNoAttritionknn <-read.csv("https://raw.githubusercontent.com/krisGTech/DDS_FINAL_PROJECT/master/Data/CaseStudy2CompSet%20No%20Attrition.csv",sep=",",header = TRUE)
+
+DDSAnalyticsCfknn <- read.csv("https://raw.githubusercontent.com/krisGTech/DDS_FINAL_PROJECT/master/Data/CaseStudy2-data.csv",sep = ",",header = TRUE)
+
+
+DDSAnalyticsCfknn%>%dplyr::select(MonthlyIncome, Age, NumCompaniesWorked,JobSatisfaction,JobLevel,YearsAtCompany,
+                      TotalWorkingYears)->cl
+clCor <- cor(cl)
+corrplot(clCor,method = "number")
+
+DDSAnalyticsCfknn$OverTime = as.numeric(DDSAnalyticsCfknn$OverTime)
+DDSAnalyticsCfknn$Gender = as.numeric(DDSAnalyticsCfknn$Gender)
+DDSAnalyticsCfknn$BusinessTravel= as.numeric(DDSAnalyticsCfknn$BusinessTravel)
+DDSAnalyticsCfknn$MaritalStatus = as.numeric(DDSAnalyticsCfknn$MaritalStatus)
+DDSAnalyticsCfknn$JobRole = as.numeric(DDSAnalyticsCfknn$JobRole)
+DDSAnalyticsCfknn$MonthlyIncome_log = log(DDSAnalyticsCfknn$MonthlyIncome)
+DDSAnalyticsCfknn$MonthlyRate_log = log(DDSAnalyticsCfknn$MonthlyRate)
+
+```
+
+kNN Classification 
+```{r}
+
+
+DDSAnalyticsCfknn$OverTime <- ifelse(DDSAnalyticsCfknn$OverTime=="yes",1,0)
+mstatus <- as.data.frame(dummy.code(DDSAnalyticsCfknn$MaritalStatus))
+jRol <- as.data.frame(dummy.code(DDSAnalyticsCfknn$JobRole))
+
+knnclsDataframe <- data.frame(Attrition=DDSAnalyticsCfknn$Attrition,
+                              JobInvolvement=DDSAnalyticsCfknn$JobInvolvement,
+                              JobRole=jRol,
+                              MaritalStatus = mstatus,
+                              OverTime = DDSAnalyticsCfknn$OverTime,
+                              StockOptionLevel= DDSAnalyticsCfknn$StockOptionLevel,
+                              JobLevel=DDSAnalyticsCfknn$JobLevel,
+                              JobSatisfaction=DDSAnalyticsCfknn$JobSatisfaction,
+                              YearsAtCompany =DDSAnalyticsCfknn$YearsAtCompany,
+                              YearsInCurrentRole=DDSAnalyticsCfknn$YearsInCurrentRole)
+
+
+DDSAnalyticsNoAttritionknn$OverTime <- ifelse(DDSAnalyticsNoAttritionknn$OverTime=="yes",1,0)
+mstatus <- as.data.frame(dummy.code(DDSAnalyticsNoAttritionknn$MaritalStatus))
+jRol <- as.data.frame(dummy.code(DDSAnalyticsNoAttritionknn$JobRole))
+
+knnPredictionDataframe <- data.frame(JobInvolvement = DDSAnalyticsNoAttritionknn$JobInvolvement,
+                                     JobRole = jRol,
+                                     MaritalStatus = mstatus,
+                                     OverTime = DDSAnalyticsNoAttritionknn$OverTime,
+                                     StockOptionLevel = DDSAnalyticsNoAttritionknn$StockOptionLevel,
+                                     JobLevel = DDSAnalyticsNoAttritionknn$JobLevel,
+                                     JobSatisfacton= DDSAnalyticsNoAttritionknn$JobSatisfaction,
+                                     yearAtCompany = DDSAnalyticsNoAttritionknn$YearsAtCompany)
+
+```
+
+#kNN Classification cross validation
+```{r}
+# spliting data set knnclsDataframe
+set.seed(7)
+ddsObsknn = sample(seq(1,dim(knnclsDataframe)[1]),round(.75*dim(knnclsDataframe)[1]),replace = FALSE)
+ddsknnTrain = knnclsDataframe[ddsObsknn,]
+ddsknnTest = knnclsDataframe[-ddsObsknn,]
+
+# kNN crossvalidation 
+
+AttClassification=knn(ddsknnTrain[,2:19],ddsknnTest[,2:19],ddsknnTrain$Attrition,prob = TRUE,k=17)
+table(AttClassification,ddsknnTest$Attrition)
+caret::confusionMatrix(table(AttClassification,ddsknnTest$Attrition))
+kCM = caret::confusionMatrix(table(AttClassification,ddsknnTest$Attrition))
+kCM
+
+
+```
+
+# Finding Mean Accuracy knn
+```{r}
+set.seed(1)
+iterations = 100
+numks = 60
+splitPerc = .95
+
+masterAcc = matrix(nrow = iterations, ncol = numks)
+
+for(j in 1:iterations)
+{
+ ddsObsknn = sample(seq(1,dim(knnclsDataframe)[1]),round(.75*dim(knnclsDataframe)[1]),replace = FALSE)
+ddsknnTrain = knnclsDataframe[ddsObsknn,]
+ddsknnTest = knnclsDataframe[-ddsObsknn,]
+  for(i in 1:numks)
+  {
+    AttClassification=knn(ddsknnTrain[,2:19],ddsknnTest[,2:19],ddsknnTrain$Attrition,prob = TRUE,k=i)
+table(AttClassification,ddsknnTest$Attrition)
+
+    kCM = caret::confusionMatrix(table(AttClassification,ddsknnTest$Attrition))
+    masterAcc[j,i] = kCM$overall[1]
+  }
+  
+}
+
+MeanAcc = colMeans(masterAcc)
+
+plot(seq(1,numks,1),MeanAcc, type = "l")
+
+which.max(MeanAcc)
+max(MeanAcc)
+```
+
+```{r}
+
+# # normalizing the values because Knn does the classification based on distances and it does better job when all the variables are normalized and are in same scalling. 
+# normalize <-  function(x){
+#   return((x-min(x))/(max(x)-min(x)))
+# }
+# #for example normalize(c(1,2,3,4,5))
+# # for exampl normalize(c(20,30,40,50,100))
+# # lets apply the function to the variables we want to normalize 
+# # e.g:  iris_n <- as.data.frame (lapply(iris[,c(1,2,3,4)],normalize))
+# 
+# DDSAnalytics_normalized = as.data.frame(lapply(DDSAnalyticsCf[c(18,32,35,36,22,29,15,7)],normalize))
+# summary(DDSAnalytics_normalized)
+# dataFrame1 <- data.frame(
+#                 YearsSinceLastPromotion = DDSAnalytics_normalized$YearsSinceLastPromotion,
+#                 StockOptionLevel = DDSAnalytics_normalized$StockOptionLevel,
+#                 NumCompaniesWorked = DDSAnalytics_normalized$NumCompaniesWorked,
+#                 JobSatisfaction= DDSAnalytics_normalized$JobSatisfaction,
+#                 JobInvolvement = DDSAnalytics_normalized$JobInvolvement,
+#                 DistanceFromHome = DDSAnalytics_normalized$DistanceFromHome,
+#                 Attrition = DDSAnalyticsCf$Attrition,
+#                 Gender = DDSAnalyticsCf$Gender,
+#                 MaritalStatus = DDSAnalyticsCf$MaritalStatus,
+#                 BusinessTravelTravel= DDSAnalyticsCf$BusinessTravel)
+# 
+# library(class)
+# library(caret)
+
+```
+
+
+
+
+```{r}
+
+# DDSAnalyticsCf$OverTime = as.numeric(DDSAnalyticsCf$OverTime)
+# DDSAnalyticsCf$Gender = as.numeric(DDSAnalyticsCf$Gender)
+# DDSAnalyticsCf$BusinessTravel= as.numeric(DDSAnalyticsCf$BusinessTravel)
+# DDSAnalyticsCf$MaritalStatus = as.numeric(DDSAnalyticsCf$MaritalStatus)
+# DDSAnalyticsCf$JobRole = as.numeric(DDSAnalyticsCf$JobRole)
+# 
+# lotistic <- glm(Attrition ~ YearsWithCurrManager + Age +YearsInCurrentRole+ YearsSinceLastPromotion + TotalWorkingYears + TrainingTimesLastYear+ WorkLifeBalance + YearsAtCompany + StockOptionLevel+PercentSalaryHike+ PerformanceRating+RelationshipSatisfaction+ NumCompaniesWorked+MonthlyIncome+ MonthlyRate+JobSatisfaction+JobInvolvement+HourlyRate+EnvironmentSatisfaction+DistanceFromHome+DailyRate+Gender+
+#                   +JobLevel+ Education+MaritalStatus+EducationField+BusinessTravel+Department+JobRole, data = DDSAnalyticsCf, family = "binomial")
+# summary(lotistic)
+
+```
+
+NaiveBayes Classification 
+
+```{r}
+DDSAnalyticsNoAttrition <-read.csv("https://raw.githubusercontent.com/krisGTech/DDS_FINAL_PROJECT/master/Data/CaseStudy2CompSet%20No%20Attrition.csv", sep=",",header = TRUE)
+
+DDSAnalyticsCf <- read.csv("https://raw.githubusercontent.com/krisGTech/DDS_FINAL_PROJECT/master/Data/CaseStudy2-data.csv",sep = ",",header = TRUE)
+
+```
+
+```{r}
+# using naive Bayes on original data 
+
+set.seed(7)
+ddsObs = sample(seq(1,dim(DDSAnalyticsCf)[1]),round(.75*dim(DDSAnalyticsCf)[1]),replace = FALSE)
+ddsTrain = DDSAnalyticsCf[ddsObs,]
+dim(ddsTrain)
+ddsTest = DDSAnalyticsCf[-ddsObs,]
+dim(ddsTest) 
+Navmodel1= naiveBayes(ddsTrain[,-c(1,3,23,10,11,17)],ddsTrain$Attrition)
+#Navmodel1= naiveBayes(ddsTrain[,c(13,15,16,17,18,19,20,21,24,29,33,35,36,34)],ddsTrain$Attrition)
+table(predict(Navmodel1,ddsTest[,-c(1,3,23,10,11,17)]),ddsTest$Attrition)
+#table(predict(Navmodel1,ddsTest[,c(13,15,16,17,18,19,20,21,24,29,33,35,36,34)]),ddsTest$Attrition)
+
+CM1= caret::confusionMatrix(table(predict(Navmodel1,ddsTest[,-c(1,3,23,10,11,17)]),ddsTest$Attrition))
+
+#CM1= confusionMatrix(table(predict(Navmodel1,ddsTest[,c(13,15,16,17,18,19,20,21,24,29,33,35,36,34)]),ddsTest$Attrition))
+CM1
+# Prediction 
+navPred <- predict(Navmodel1,DDSAnalyticsNoAttrition)
+library(modelr)
+predictionDataFrame <- add_predictions(DDSAnalyticsNoAttrition,Navmodel1,var="navPred",type = NULL)
+
+
+navClassification <- predictionDataFrame[,c(1,36)]
+write.csv(navClassification,"NbAttritionClassification.csv")
+
+
+# Donut chart Nab Classification on DDSAnalyticsNoAttrition data set 
+nbClassification <- navClassification%>%group_by(navPred)%>%
+  dplyr::summarize(count=n(),
+                   NavPredPercent = n()/nrow(navClassification))
+
+nbClassificationDonut <- ggplot(data = nbClassification,aes(x=3,y=NavPredPercent,fill=navPred))+
+  geom_col(color="white")+
+  scale_fill_manual(values = c("#1E90FF", "#DC143C"))+
+  coord_polar("y",start = 1)+
+  geom_text(aes(label=paste0(round(NavPredPercent*100),"%")),
+            position = position_stack(vjust = 0.5),size=I(4.5),color="white")+
+  theme(panel.background = element_blank(),
+        axis.line = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        legend.text = element_text(size=I(13)),
+        plot.title = element_text(hjust = 0.5,size = I(17)))+
+  ggtitle("naiveBayes Classification of Attrition")+
+  xlim(0.1,3.5)
+nbClassificationDonut + labs(fill="Attrition") # change the legend title to Attrition from default title
+
+
+# 200 iteration on Training / Test split Percentage to calculate accuracy 
+iterations = 200
+masterAcc = matrix(nrow=iterations)
+splitPerc = 0.75  #Training / Test split Percentage
+for(j in 1:iterations){
+  
+ddsObs = sample(seq(1,dim(DDSAnalyticsCf)[1]),round(splitPerc*dim(DDSAnalyticsCf)[1]))
+ddsTrain = DDSAnalyticsCf[ddsObs,]
+ddsTest = DDSAnalyticsCf[-ddsObs,]
+
+Navmodel1= naiveBayes(ddsTrain[,-c(1,3,23,10,11,17)],ddsTrain$Attrition,laplace = 1)
+table(predict(Navmodel1,ddsTest[,-c(1,3,23,10,11,17)]),ddsTest$Attrition)
+CM1= caret::confusionMatrix(table(predict(Navmodel1,ddsTest[,-c(1,3,23,10,11,17)]),ddsTest$Attrition))
+masterAcc[j] = CM1$overall[1] 
+}
+MeanAcc = colMeans(masterAcc)
+MeanAcc
+
+
+```
+
+#logistic regression
+
+```{r}
+
+#ddsPredictionData <- read.csv(file.choose())
+ddsPredictionData<- read.csv("https://raw.githubusercontent.com/krisGTech/DDS_FINAL_PROJECT/master/Data/CaseStudy2CompSet%20No%20Attrition.csv",sep = ",",header = TRUE)
+
+
+DDSAnalyticsLogistic <-read.csv("https://raw.githubusercontent.com/krisGTech/DDS_FINAL_PROJECT/master/Data/CaseStudy2-data.csv",sep = ",",header = TRUE)
+
+
+DDSAnalyticsLogistic$OverTime = as.factor(DDSAnalyticsLogistic$OverTime)
+set.seed(7)
+ddsObslogis = sample(seq(1,dim(DDSAnalyticsLogistic)[1]),round(.75*dim(DDSAnalyticsLogistic)[1]),replace = FALSE)
+ddsLogisTrain = DDSAnalyticsLogistic[ddsObslogis,]
+dim(ddsLogisTrain)
+ddsLogisTest = DDSAnalyticsLogistic[-ddsObslogis,]
+dim(ddsLogisTest) 
+logisModClf <- glm(Attrition ~ JobInvolvement+JobLevel+JobRole+JobSatisfaction+MaritalStatus+MonthlyIncome+MonthlyRate+
+                     OverTime+StockOptionLevel+YearsAtCompany+YearsSinceLastPromotion+
+                     YearsWithCurrManager+YearsInCurrentRole,
+                    data = ddsLogisTrain, family=binomial(link="logit"))
+summary(logisModClf)
+varImp(logisModClf) # displays all the important variables 
+pred = predict(logisModClf, newdata=ddsLogisTest,type = "response")
+
+table(ddsLogisTest$Attrition,pred > 0.5)
+
+ddsPredictionData$OverTime=as.factor(ddsPredictionData$OverTime)
+predLogistic <- predict(logisModClf,newdata = ddsPredictionData,type="response")
+
+# Accuracy = 90.3%
+# Sensitivity = 93.3%
+# Specificity = 66.666%
+
+```
+
+
+```{r}
+
+#https://www.shrm.org/hr-today/trends-and-forecasting/special-reports-and-expert-views/Documents/Retaining-Talent.pdf
+
+# Turnover Analysis
+# How Many Are Leaving?
+# Who Is Leaving?
+# Costs and Benefits?
+#What causes turnover?
+# satisfactry pay, good working condition and development opportunites.
+# low job satisfaction 
+# poor performance 
+# more attractive than his or her current role
+# work environment
+# what make employee stay?
+# positive work environment,
+# promotional opportunities, status
+# in the community, 
+lotisticCF <- glm(Attrition ~ Age+EnvironmentSatisfaction+JobInvolvement+JobSatisfaction+MaritalStatus+
+            RelationshipSatisfaction+TrainingTimesLastYear+WorkLifeBalance+YearsSinceLastPromotion+
+              JobRole+ MonthlyIncome+MonthlyRate+PerformanceRating+StandardHours+StockOptionLevel,
+              data = DDSAnalyticsCf, family = "binomial")
+summary(lotisticCF)
+
+```
+
+
+# Conclusion:
+In nutshell, company is always going to have attrition, some are voluntary and some involuntary. The most important thing we are focus on this project is to find out a way to retain employee as much as possible. Voluntary attrition such as retirement, personal health, relocation etc. can be very costly to the company. On the other hand, involuntary attrition such as layoffs or reductions in force and terminating poorly performing employees can sometime be beneficial as it could create an opportunity to hire high performance and motivated employee that can better much a job role. While some of the factors that is analyzed in this project are not so easy to control attrition, there are some factors such as over time, stock option and job involvement that I believe can be controlled to retain the talented employees. Reducing overtime whenever its possible or spreading hours equally among several employee could be a solution to elevate the motivation and the performance of employee. As we all like to get appreciated and get involve in company and get noticed often, I am certain that focusing on improving the job involvement could be an excellent step to take to keep attrition in balance.
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
