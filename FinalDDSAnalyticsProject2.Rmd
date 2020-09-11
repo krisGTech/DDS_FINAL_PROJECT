@@ -1,5 +1,5 @@
 ---
-title: "MSDS 6306: Doing Data Science"
+title: "Attrition Analysis"
 author: "Kris Ghimire"
 date: "3/24/2020"
 output: html_document
@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 
-## DDSAnalytics Talent Management Solution:
+
 
 # Introduction: 
 Keeping employees happy in the company and hiring best match for the specific role is one of the most important aspect of Talent management. People are the backbone of any company. All the resources, infrastructures, and technology provide no value to the company without the topmost talented and skilled employees. Hence, the biggest challenges that talent management company faces every day is not being able to have enough data on attracting and  retaining the talented  employees. Therefore, our goal in this project is to leverage the power of data science to conduct an analysis on existing employee data to provide some interesting trends that may exists in data set, identify top factors that contribute to turnover and build a model to classify attrition and predict monthly income. 
